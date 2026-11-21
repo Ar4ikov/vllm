@@ -806,7 +806,9 @@ class Inkling2ForConditionalGeneration(
                 raise ValueError(f"Unexpected checkpoint tensor: {name}")
             param = params[name]
             if expert is not None:
-                if param.weight_loader(param, weight, int(expert_id), projection, key):
+                module = self.get_submodule(experts)
+                assert isinstance(module, Inkling2CTExperts)
+                if module.load_expert(param, weight, int(expert_id), projection, key):
                     expert_shards[name] += 1
                 continue
             if param.dtype != weight.dtype:

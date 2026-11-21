@@ -32,7 +32,6 @@ from vllm.distributed import (
 from vllm.model_executor.layers.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
     CompressedTensorsConfig,
 )
-from vllm.model_executor.utils import set_weight_attrs
 
 from .ops.moe import combine, combine_push
 from .ops.moe_sm90 import HummingExperts
@@ -78,10 +77,10 @@ class Inkling2CTScheme:
                 "quantize every routed expert projection (gate_proj, up_proj, "
                 "down_proj) or none of the model"
             )
-        keys = {
-            proj: (s["weights"], s.get("input_activations"), s["format"])
-            for proj, s in schemes.items()
-        }
+        keys: dict[str, tuple[Any, Any, Any]] = {}
+        for proj, s in schemes.items():
+            assert s is not None
+            keys[proj] = (s["weights"], s.get("input_activations"), s["format"])
         if len(set(map(repr, keys.values()))) != 1:
             raise ValueError(
                 f"{prefix}: the Inkling2 expert projections must share one "
@@ -266,7 +265,6 @@ class Inkling2CTExperts(nn.Module):
                     torch.empty(attrs[key]["shape"], dtype=attrs[key]["dtype"]),
                     requires_grad=False,
                 )
-                set_weight_attrs(param, {"weight_loader": self._load_expert})
                 self.register_parameter(f"{name}_{checkpoint_key}", param)
             self.tensor_names = names
 
@@ -278,7 +276,7 @@ class Inkling2CTExperts(nn.Module):
         )
         self.humming: HummingExperts | None = None
 
-    def _load_expert(
+    def load_expert(
         self,
         param: nn.Parameter,
         loaded: torch.Tensor,

@@ -404,6 +404,7 @@ class Inkling2MoE(nn.Module):
                 is_padding,
             )
             return experts(x, selected, None, None, reduce, push)
+        assert isinstance(experts, Inkling2Experts)
         plan = experts.plan(x.shape[0])
         routing, quantized = route(
             x,

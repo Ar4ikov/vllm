@@ -155,6 +155,7 @@ def test_scheme_maps_to_humming_schemas(name: str):
     if acts is None:
         assert input_schema is None
     else:
+        assert input_schema is not None
         a_dtype = input_schema.a_dtype
         assert a_dtype.num_bits == 8
         assert a_dtype.is_floating_point_type == (acts["type"] == "float")
@@ -298,7 +299,7 @@ def _load(experts: Inkling2CTExperts, tensors) -> None:
     params = dict(experts.named_parameters())
     for (e, proj, key), t in tensors.items():
         name = f"{moe_ct.PROJECTIONS[proj][0]}_{key}"
-        params[name].weight_loader(params[name], t, e, proj, key)
+        experts.load_expert(params[name], t, e, proj, key)
 
 
 @requires_humming_package
