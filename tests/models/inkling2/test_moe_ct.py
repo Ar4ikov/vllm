@@ -174,7 +174,11 @@ def test_scheme_maps_to_humming_schemas(name: str):
             _ct_config(
                 "float-quantized",
                 _fp8_weights(),
-                {**_dynamic_activations("float"), "dynamic": False, "strategy": "tensor"},
+                {
+                    **_dynamic_activations("float"),
+                    "dynamic": False,
+                    "strategy": "tensor",
+                },
             ),
             "static activation scales",
         ),
@@ -188,7 +192,10 @@ def test_scheme_maps_to_humming_schemas(name: str):
         ),
         (
             _ct_config(
-                "pack-quantized", _int_weights(), None, ignore=[f"{PREFIX}.experts.0.up_proj"]
+                "pack-quantized",
+                _int_weights(),
+                None,
+                ignore=[f"{PREFIX}.experts.0.up_proj"],
             ),
             "unquantized Inkling2 experts",
         ),
@@ -197,7 +204,9 @@ def test_scheme_maps_to_humming_schemas(name: str):
 def test_unsupported_schemes_are_rejected(config, match: str):
     """Rejected at model construction, before any weight is loaded."""
     with pytest.raises(ValueError, match=match):
-        Inkling2CTScheme.from_config(CompressedTensorsConfig.from_config(config), PREFIX)
+        Inkling2CTScheme.from_config(
+            CompressedTensorsConfig.from_config(config), PREFIX
+        )
 
 
 MOE_CONFIG = SimpleNamespace(
@@ -213,7 +222,9 @@ MOE_CONFIG = SimpleNamespace(
 )
 
 
-def _quantize(w: torch.Tensor, name: str) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+def _quantize(
+    w: torch.Tensor, name: str
+) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
     """compressed-tensors tensors of one bf16 projection `[N, K]` in scheme
     `name`, and their dequantized weights."""
     fmt, args, _ = SCHEMES[name]
@@ -271,7 +282,9 @@ def _random_experts(name: str, device: str):
             ("up_proj", (inter, hidden)),
             ("down_proj", (hidden, inter)),
         ):
-            w = torch.randn(n, k, device=device) * (0.05 if proj == "gate_proj" else 0.1)
+            w = torch.randn(n, k, device=device) * (
+                0.05 if proj == "gate_proj" else 0.1
+            )
             w[:, :5] += 0.3  # Uneven groups (zero points away from the middle).
             proj_tensors, dequant[proj] = _quantize(w, name)
             for key, t in proj_tensors.items():
@@ -290,9 +303,7 @@ def _load(experts: Inkling2CTExperts, tensors) -> None:
 
 @requires_humming_package
 @pytest.mark.parametrize("name", ["W4A16_ASYM", "W4A8", "W8A8_FP8", "FP8_BLOCK"])
-def test_experts_load_their_shard_with_gate_up_rows_interleaved(
-    monkeypatch, name: str
-):
+def test_experts_load_their_shard_with_gate_up_rows_interleaved(monkeypatch, name: str):
     """Rank 1 of 2 keeps experts 8-15, gate / up rows at even / odd rows."""
     monkeypatch.setattr(moe_ct, "get_tensor_model_parallel_rank", lambda: 1)
     monkeypatch.setattr(moe_ct, "get_tensor_model_parallel_world_size", lambda: 2)
@@ -307,7 +318,9 @@ def test_experts_load_their_shard_with_gate_up_rows_interleaved(
         for local in range(8):
             gate, up, down = (tensors[(8 + local, p, key)] for p in moe_ct.PROJECTIONS)
             if key == "weight_scale" and block > 1:
-                gate, up, down = (t.repeat_interleave(block, 0) for t in (gate, up, down))
+                gate, up, down = (
+                    t.repeat_interleave(block, 0) for t in (gate, up, down)
+                )
             if key == "weight" and name == "W4A8":
                 gate, up, down = (_pack_cols(t, 4) for t in (gate, up, down))
             rows = w13[local]

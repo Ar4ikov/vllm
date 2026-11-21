@@ -236,7 +236,9 @@ class Inkling2CTExperts(nn.Module):
         self.shapes = ((2 * inter, hidden), (hidden, inter))
         self.scheme = scheme
         self.weight_schema = weight_schema = scheme.humming_weight_schema()
-        self.zero_point_bits = None if scheme.weights.symmetric else weight_schema.num_bits
+        self.zero_point_bits = (
+            None if scheme.weights.symmetric else weight_schema.num_bits
+        )
 
         # (Humming, checkpoint) names of each projection's tensors. The
         # parameters keep the checkpoint names; `weight_shape` is only
@@ -251,7 +253,12 @@ class Inkling2CTExperts(nn.Module):
             )
             attrs.pop("weight_shape", None)
             names = [
-                (key, "weight" if key == "weight_packed" and scheme.packs_weights else key)
+                (
+                    key,
+                    "weight"
+                    if key == "weight_packed" and scheme.packs_weights
+                    else key,
+                )
                 for key in attrs
             ]
             for key, checkpoint_key in names:
