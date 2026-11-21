@@ -571,6 +571,7 @@ class Inkling2ForConditionalGeneration(
             raise ValueError("Inkling2 does not support prompt embeddings")
         self.config = config
         self.text_config = text_config = config.text_config
+        self.compressed_tensors = isinstance(quant_config, CompressedTensorsConfig)
         self.visual = (
             Inkling2VisionEncoder(config.vision_config, text_config.hidden_size)
             if config.vision_config is not None
@@ -812,15 +813,20 @@ class Inkling2ForConditionalGeneration(
                     expert_shards[name] += 1
                 continue
             if param.dtype != weight.dtype:
-                if ".mlp.experts." in name and weight.dtype == torch.bfloat16:
+                if self.compressed_tensors and weight.dtype == torch.float32:
+                    # transformers keeps the short convs, router and loop
+                    # controllers in float32, and llm-compressor saves them so.
+                    weight = weight.to(param.dtype)
+                elif ".mlp.experts." in name and weight.dtype == torch.bfloat16:
                     raise ValueError(
                         f"{name}: BF16 expert weights are not supported; the "
                         "Inkling2 experts are NVFP4 / MXFP8, as declared per "
                         "tensor in the checkpoint's hf_quant_config.json"
                     )
-                raise ValueError(
-                    f"{name}: checkpoint dtype {weight.dtype} != {param.dtype}"
-                )
+                else:
+                    raise ValueError(
+                        f"{name}: checkpoint dtype {weight.dtype} != {param.dtype}"
+                    )
             loader: Callable[..., None] = getattr(
                 param, "weight_loader", default_weight_loader
             )

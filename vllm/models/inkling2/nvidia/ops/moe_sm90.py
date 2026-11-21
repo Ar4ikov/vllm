@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Inkling2 routed experts on Hopper: Humming expert GEMMs (bf16
 activations, NVFP4 / MXFP8 weights) in place of the TRT-LLM-gen ones. The
-compressed-tensors experts (`moe_ct`) run them on any GPU Humming supports.
+compressed-tensors experts (`moe_ct`) run them on Blackwell too.
 
 Rows stay in the flat (token * topk + slot) order: the gate/up GEMM
 gathers each row's token, the down GEMM reads and writes row by row, and

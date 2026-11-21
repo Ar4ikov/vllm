@@ -348,11 +348,13 @@ def _quantize_activations(x: torch.Tensor, a_dtype, group: int) -> torch.Tensor:
 
 requires_humming = pytest.mark.skipif(
     not (
-        current_platform.is_cuda()
-        and current_platform.has_device_capability(75)
+        (
+            current_platform.is_device_capability_family(100)
+            or current_platform.is_device_capability(90)
+        )
         and has_humming()
     ),
-    reason="compressed-tensors Inkling2 experts run on Humming (SM75+)",
+    reason="Inkling2 MoE requires Hopper or Blackwell, and Humming",
 )
 
 
@@ -365,10 +367,6 @@ def test_ct_moe_layer_matches_reference(dist_init, name: str, tokens: int):
     from vllm.models.inkling2.nvidia.moe import Inkling2MoE
     from vllm.models.inkling2.nvidia.ops.linear import linear_k_groups
 
-    if name in ("W8A8_FP8", "FP8_BLOCK") and not current_platform.has_device_capability(
-        80
-    ):
-        pytest.skip("FP8 weights need SM80+")
     cfg = MOE_CONFIG
     tensors, w13, w2 = _random_experts(name, "cuda")
     with torch.device("cuda"):
