@@ -7,8 +7,12 @@ import torch
 
 from vllm.triton_utils import tl, tldevice, triton
 
+from . import use_pdl
+from .e4m3 import e4m3_arg
 from .mxfp8 import _mxfp8_block, _store_mxfp8_block
 from .nvfp4 import FP32_MAX, _quantize_block, _store_block
+from .pdl import gdc_launch_dependents, gdc_wait
+from .trtllm_bmm import operand
 
 # Up to this many rows, the kernel lets the next one launch (and wait) as soon
 # as it starts, which hides its launch; with more, the waiting programs would
@@ -144,7 +148,7 @@ def _situ_quantize_kernel(
     # scales are read before waiting for the gate/up GEMM, which launches this
     # kernel only after its own wait for the routing kernel.
     if LAUNCH_DEPENDENTS:
-        tl.extra.cuda.gdc_launch_dependents()
+        gdc_launch_dependents()
     num_rows = tl.load(NumRows)
     r = tl.program_id(0)
     row, gamma, w_amax = _row_inputs(
@@ -153,7 +157,7 @@ def _situ_quantize_kernel(
     denominator = 0.0
     if NVFP4:
         denominator = 1536.0 * tl.load(WDenominator)
-    tl.extra.cuda.gdc_wait()
+    gdc_wait()
     start = tl.program_id(1) * (HEAD + TAIL)
     while r < num_rows:
         head = _situ(X, row, start, gamma, N, HEAD, GATE_CAP, UP_CAP)
@@ -231,9 +235,9 @@ def swiglu_quantize(
     max_rows = routed.numel()
     num_warps, maxnreg = (4, None) if max_rows <= 16384 else (2, 72)
     if not nvfp4 and max_rows <= 512:
-        # Few rows: a program per 256 columns.
-        assert n % 256 == 0
-        head, tail, num_warps = 256, 0, 2
+        # Few rows: a program per 256 (or 128) columns.
+        head, tail, num_warps = 256 if n % 256 == 0 else 128, 0, 2
+        assert n % head == 0
     else:
         # Whole rows, as a power-of-two head and tail.
         head = 1 << (n.bit_length() - 1)
@@ -241,21 +245,20 @@ def swiglu_quantize(
         assert tail & (tail - 1) == 0 and (tail == 0 or tail >= 32)
         if not nvfp4:
             num_warps, maxnreg = 2, None
+    # The down projection's GEMM operands.
     if nvfp4:
-        values = torch.empty((num_rows, n // 2), dtype=torch.uint8, device=x.device)
-        scales = torch.empty(
-            (num_rows, n // 16), dtype=torch.float8_e4m3fn, device=x.device
-        )
-        row_scales = torch.empty(num_rows, dtype=torch.float32, device=x.device)
+        values = operand(num_rows, n // 2, dtype=torch.uint8, device=x.device)
+        scales = operand(num_rows, n // 16, dtype=torch.float8_e4m3fn, device=x.device)
+        row_scales = operand(num_rows, dtype=torch.float32, device=x.device)
     else:
-        values = torch.empty((num_rows, n), dtype=torch.float8_e4m3fn, device=x.device)
-        scales = torch.empty((num_rows, n // 32), dtype=torch.uint8, device=x.device)
+        values = operand(num_rows, n, dtype=torch.float8_e4m3fn, device=x.device)
+        scales = operand(num_rows, n // 32, dtype=torch.uint8, device=x.device)
         row_scales = None
     _situ_quantize_kernel[(min(max_rows, 16384), n // (head + tail))](
         x,
         gammas,
-        values,
-        scales,
+        e4m3_arg(values),
+        e4m3_arg(scales),
         row_scales,
         routed,
         num_routed,
@@ -273,6 +276,6 @@ def swiglu_quantize(
         num_warps=num_warps,
         maxnreg=maxnreg,
         enable_fp_fusion=False,
-        launch_pdl=True,
+        launch_pdl=use_pdl(),
     )
     return values, scales, row_scales
